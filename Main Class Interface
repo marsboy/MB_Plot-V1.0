@@ -1,0 +1,1049 @@
+
+//辅助函数 
+function $(id){return document.getElementById(id)}; 
+var mbplot_body;//全局对象【body引用】
+if(window.addEventListener){
+  window.addEventListener('load',function(){mbplot_body=(document.compatMode=="BackCompat"?document.body:document.documentElement);},false);
+ }
+else{
+  window.attachEvent('onload',function(){mbplot_body=(document.compatMode=="BackCompat"?document.body:document.documentElement);});
+  }
+
+//各类内部对象在事件程序中的引用
+var Gplot_coord=new Array();
+var Gplot_showcoord=new Array();
+var Gplot_zoom=new Array();
+/** 
+    * 绘图类 
+    * 包含基本的绘图函数，比如画点，线段，多边形，圆等 
+    * 和一些绘图参数，比如背景颜色，画笔颜色 ，背景方格大小，
+    * 附加功能：实时坐标显示，坐标线刻度显示，
+**/ 
+function MB_Plot(containerId, ox, oy, baseLineColor,brushColor,bgcolor,tickmarkColor,brushWeight,bgdiv,zoom){ 
+//画布，所有被画出来的元素都append到这个container 
+//-------------
+  //变量【数据成员】
+//-------------
+this.container=null;
+//原点x 
+this.ox=500;
+//原点y 
+this.oy=300; 
+//画布方格边长
+this.bgdiv=5;
+//画布颜色【默认浅灰】
+this.bgcolor='#cdcdcd';
+//坐标颜色【默认黑色】
+this.baseLineColor='black';
+//画笔颜色【默认红色】
+this.brushColor='red';
+//画笔粗细 
+this.brushWeight=1;
+//baseLineX，baseLineY保存坐标线，用于坐标移位 
+this.x_arrow=new Array();//x箭头
+this.y_arrow=new Array();//y箭头
+this.baseLineX=null; 
+this.baseLineY=null;
+//方格线数据【方便刷新】
+this.divx=new Array();
+this.divy=new Array();
+//画布尺寸【高与宽】
+this.bgWidth=0;//宽
+this.bgHeight=0;//高
+//放大倍数【相对于实际宽度px】
+this.zoom=1;//默认1:1
+//坐标显示对象
+this.showcoord=null;
+//刻度线对象
+this.tickmark_x=new Array();
+this.tickmark_y=new Array();
+//刻度线颜色[默认蓝色]
+this.tickmarkColor='blue';
+
+
+//-------------
+  //初始化，设置画布，原点位置，坐标线颜色，画笔颜色，画笔粗细，等
+//-------------
+
+if($(containerId)){ 
+this.container = $(containerId); 
+} 
+else{ 
+alert('You should specify an element in which you can draw this!'); 
+return false; 
+} 
+
+//设置画布背景色
+if(bgcolor!=null && bgcolor!='')
+this.bgcolor=bgcolor;
+this.container.style.backgroundColor=this.bgcolor;
+//获取画布高度与宽度
+this.bgWidth=this.container.clientWidth;
+this.bgHeight=this.container.clientHeight;
+
+//获取方格尺寸
+if((typeof bgdiv)=='number' && Number(bgdiv)>5)
+this.bgdiv=parseInt(Number(bgdiv));
+//获取原点位置
+if(ox && (typeof ox)=='number' && Number(ox)>0 && Number(ox)<=this.bgWidth){ 
+this.ox =Math.ceil(Number(ox)); 
+}else{
+this.ox=Math.ceil(this.bgWidth/2);
+}
+if(oy && (typeof oy)=='number'){ 
+if(Number(oy)>0 && Number(oy)<=this.bgHeight){
+this.oy = Math.ceil(Number(oy));}else{this.oy=parseInt(this.bgHeight/2);} 
+}else{
+this.oy=Math.ceil(this.bgHeight/2);
+}
+
+//增设全局坐标数组[直接用id号数组]
+Gplot_coord[this.container.id]={x:0,y:0};
+Gplot_coord[this.container.id].x=this.ox;
+Gplot_coord[this.container.id].y=this.oy;
+
+//坐标颜色
+if((typeof baseLineColor)=='string' && baseLineColor!=''){
+this.baseLineColor = baseLineColor;}else{
+this.baseLineColor='black';
+}
+//画笔颜色 
+this.brushColor = brushColor; 
+this.brushWeight = brushWeight; 
+//放大倍数
+if((typeof zoom)=='number' && Number(zoom)>0){
+ this.zoom=Number(zoom).toFixed(2);
+}else{
+ this.zoom=1;
+}
+Gplot_zoom[this.container.id]=this.zoom;
+//刻度线颜色
+if(tickmarkColor && tickmarkColor!='')
+  this.tickmarkColor=tickmarkColor;
+
+
+//-------------
+  //方法【成员函数】
+//-------------
+//设置刻度线颜色
+this.setTickmarkColor=function(tcolor){
+if(tcolor && tcolor!='')
+  this.tickmarkColor=tcolor;
+var i=0;
+for(i=0;i<this.tickmark_x.length;i++)
+  this.tickmark_x.style.color=this.tickmarkColor;
+for(i=0;i<this.tickmark_y.length;i++)
+  this.tickmark_y.style.color=this.tickmarkColor;
+return true;
+};
+//设置显示刻度线
+this.setTickmark=function(){
+ var i,j;
+ if(this.tickmark_x.length && this.tickmark_y.length){
+  for(i=0;i<this.tickmark_x.length;i++)
+    this.container.removeChild(this.tickmark_x[i]);
+  for(i=0;i<this.tickmark_y.length;i++)
+    this.container.removeChild(this.tickmark_y[i]);
+ }
+ this.tickmark_x.length=0;
+ this.tickmark_y.length=0;
+ var offset=(this.bgdiv>=50?this.bgdiv:50);
+ i=1;
+//x刻度线
+ while(this.ox+i*offset<this.bgWidth){
+  this.tickmark_x[i-1]=document.createElement('div');
+  this.tickmark_x[i-1].style.position='absolute';
+  this.tickmark_x[i-1].style.left=(this.ox + i*offset - 40) + 'px';
+  this.tickmark_x[i-1].style.top=(this.oy + 5) + 'px';
+  this.tickmark_x[i-1].style.textAlign='right';
+  this.tickmark_x[i-1].innerHTML=(i*offset*this.zoom).toFixed(1);
+  i++;
+ }
+ i--;
+ j=1;
+ while((this.ox-j*offset)>0){
+  this.tickmark_x[i]=document.createElement('div');
+  this.tickmark_x[i].style.position='absolute';
+  this.tickmark_x[i].style.left=(this.ox-j*offset) + 'px';
+  this.tickmark_x[i].style.top=(this.oy + 5) + 'px';
+  this.tickmark_x[i].style.textAlign='left';
+  this.tickmark_x[i].innerHTML=(0-j*offset*this.zoom).toFixed(1);
+  j++;
+  i++;
+ }
+//y刻度线
+  i=1;
+  j=1;
+ while(this.oy-i*offset>0){
+  this.tickmark_y[i-1]=document.createElement('div');
+  this.tickmark_y[i-1].style.position='absolute';
+  this.tickmark_y[i-1].style.left=(this.ox -40) + 'px';
+  this.tickmark_y[i-1].style.top=(this.oy - i*offset) + 'px';
+  this.tickmark_y[i-1].innerHTML=(i*offset*this.zoom).toFixed(1);
+  i++;
+ }
+ i--;
+ while((this.oy+j*offset)<this.bgHeight){
+  this.tickmark_y[i]=document.createElement('div');
+  this.tickmark_y[i].style.position='absolute';
+  this.tickmark_y[i].style.left=(this.ox -40) + 'px';
+  this.tickmark_y[i].style.top=(this.oy + j*offset-12) + 'px';
+  this.tickmark_y[i].innerHTML=(0-j*offset*this.zoom).toFixed(1);
+  j++;
+  i++;
+ }
+ 
+//整理x刻度
+ for(i=0;i<this.tickmark_x.length;i++){
+   with(this.tickmark_x[i].style){
+    width='40px';
+    height='12px';
+    overflow='hidden';
+    fontSize='12px';
+    color=this.tickmarkColor;
+    border='solid 0px white';
+    zIndex=1000;    
+    cursor='default';
+   }
+   this.container.appendChild(this.tickmark_x[i]);
+ }
+//整理y刻度
+ for(i=0;i<this.tickmark_y.length;i++){
+   with(this.tickmark_y[i].style){
+    width='40px';
+    height='12px';
+    overflow='hidden';
+    fontSize='12px';
+    color=this.tickmarkColor;
+    textAlign='right';
+    border='solid 0px white';
+    zIndex=1000;   
+    cursor='default'; 
+   }
+   this.container.appendChild(this.tickmark_y[i]);
+ }
+return true;
+};
+//设置坐标显示容器
+this.setCoordShow=function(){
+this.showcoord=document.createElement('div');
+with(this.showcoord.style){
+width='100px';
+height='30px';
+border='solid 0px white';
+textAlign='left';
+overflow='hidden';
+color='blue';
+opacity=0.3;
+filter='alpha(opacity=30)';
+backgroundColor='white';
+fontSize='13px';
+fontWeight='bold';
+zIndex=1000;
+cursor='default';
+position='absolute';
+left='10px';
+top='5px';
+}
+Gplot_showcoord[this.container.id]=this.showcoord;
+this.container.appendChild(this.showcoord);
+return true;
+};
+//设置放大倍数【大于1：坐标范围增大，图像相对变小 小于1：坐标范围减小，图像显示更大】
+this.setZoom=function(zoom){
+ if((typeof zoom)=='number' && Number(zoom)>0)
+  {this.zoom=Number(zoom).toFixed(2);}else{alert('Please the right zoom value ,it must be >0');}
+ Gplot_zoom[this.container.id]=this.zoom;
+ this.setTickmark();
+return true;
+};
+//设置原点函数 
+this.setOPoint=function(ox,oy){ 
+this.ox = ox; 
+this.oy = oy; 
+this.container.removeChild(this.baseLineX); 
+this.container.removeChild(this.baseLineY); 
+this.drawCoordinate(); 
+return true;
+};
+//设置画笔粗细函数 
+this.setBrushWeight=function(weight){ 
+this.brushWeight = weight; 
+return true;
+};
+this.setBrushColor=function(color){ 
+    this.brushColor = color; 
+return true;
+};
+//设置方格线的尺寸
+this.setDiv=function(dsize){
+var olddiv=this.bgdiv;
+if((typeof dsize)=='number' && Number(dsize)>=5){
+this.bgdiv=parseInt(Number(dsize));
+if(olddiv != this.bgdiv)
+this.cleanDiv();//先清除再绘制
+this.drawDiv();//绘制方格
+}else{
+alert('div size must be number and its value can not be less than 5');
+return false;
+}
+};
+//绘制方格线
+this.drawDiv=function(){
+var div_x_num_l=Math.floor(this.ox/this.bgdiv);
+var div_x_num_r=Math.floor((this.bgWidth-this.ox-1)/this.bgdiv);
+var div_y_num_t=Math.floor(this.oy/this.bgdiv);
+var div_y_num_d=Math.floor((this.bgHeight-this.oy-1)/this.bgdiv);
+//alert(this.bgHeight);
+//alert(div_x_num_l + '  ---' + div_x_num_r + '----' + div_y_num_t + '-----' + div_y_num_d);
+var i=0;
+//竖线
+for(i=0;i<div_x_num_l;i++){
+ this.divx[i]=document.createElement('div');
+ this.divx[i].style.position='absolute';
+ this.divx[i].style.left=(this.ox -(div_x_num_l-i)*this.bgdiv) + 'px';
+ this.divx[i].style.top=(this.oy-div_y_num_t*this.bgdiv) +'px';
+ this.divx[i].style.width='1px';
+ this.divx[i].style.height=(div_y_num_t+div_y_num_d)*this.bgdiv + 'px';
+ this.divx[i].style.overflow='hidden';
+ this.divx[i].style.border='solid 0px white';
+ this.divx[i].style.backgroundColor='#b4b4b4';
+ this.container.appendChild(this.divx[i]);
+}
+for(i=div_x_num_l;i<(div_x_num_l+div_x_num_r);i++){
+ this.divx[i]=document.createElement('div');
+ this.divx[i].style.position='absolute';
+ this.divx[i].style.left=(this.ox +(i+1-div_x_num_l)*this.bgdiv) + 'px';
+ this.divx[i].style.top=(this.oy-div_y_num_t*this.bgdiv) +'px';
+ this.divx[i].style.width='1px';
+ this.divx[i].style.height=(div_y_num_t+div_y_num_d)*this.bgdiv + 'px';
+ this.divx[i].style.overflow='hidden';
+ this.divx[i].style.border='solid 0px white';
+ this.divx[i].style.backgroundColor='#b4b4b4';
+ this.container.appendChild(this.divx[i]);
+}
+
+//横线
+for(i=0;i<div_y_num_t;i++){
+ this.divy[i]=document.createElement('div');
+ this.divy[i].style.position='absolute';
+ this.divy[i].style.left=(this.ox -div_x_num_l*this.bgdiv) + 'px';
+ this.divy[i].style.top=(this.oy-(div_y_num_t-i)*this.bgdiv) +'px';
+ this.divy[i].style.height='1px';
+ this.divy[i].style.width=(div_x_num_l+div_x_num_r)*this.bgdiv + 'px';
+ this.divy[i].style.overflow='hidden';
+ this.divy[i].style.border='solid 0px white';
+ this.divy[i].style.backgroundColor='#b4b4b4';
+ this.container.appendChild(this.divy[i]);
+}
+for(i=div_y_num_t;i<(div_y_num_t+div_y_num_d);i++){
+ this.divy[i]=document.createElement('div');
+ this.divy[i].style.position='absolute';
+ this.divy[i].style.left=(this.ox -div_x_num_l*this.bgdiv) + 'px';
+ this.divy[i].style.top=(this.oy+(i+1-div_y_num_t)*this.bgdiv) +'px';
+ this.divy[i].style.height='1px';
+ this.divy[i].style.width=(div_x_num_l+div_x_num_r)*this.bgdiv + 'px';
+ this.divy[i].style.overflow='hidden';
+ this.divy[i].style.border='solid 0px white';
+ this.divy[i].style.backgroundColor='#b4b4b4';
+ this.container.appendChild(this.divy[i]);
+}
+this.setTickmark();//绘制刻度线
+return true;
+};
+//清除div方格
+this.cleanDiv=function(){
+ var i=0;
+ for(i=0;i<this.divx.length;i++)
+   this.container.removeChild(this.divx[i]);
+ for(i=0;i<this.divy.length;i++)
+   this.container.removeChild(this.divy[i]);
+ this.divx.length=0;
+ this.divy.length=0;
+return true;
+};
+//画坐标线 [z-index:100]
+this.drawCoordinate=function(){
+
+var i=0;
+for (i=0;i<6;i++){
+  this.x_arrow[i]=document.createElement('div');
+  this.y_arrow[i]=document.createElement('div');
+  with(this.x_arrow[i].style){
+    position='absolute';
+    fontSize='1px';
+    height='1px';
+    width='1px';
+    overflow='hidden';
+    zIndex=100;
+    backgroundColor=this.baseLineColor;
+  }
+  with(this.y_arrow[i].style){
+    position='absolute';
+    fontSize='1px';
+    height='1px';
+    width='1px';
+    overflow='hidden';
+    zIndex=100;
+    backgroundColor=this.baseLineColor;
+  }
+}
+//x轴箭头
+this.x_arrow[0].style.left=(this.bgWidth-2) +'px';
+this.x_arrow[0].style.top=(this.oy-1) + 'px';
+this.x_arrow[1].style.left=(this.bgWidth-2) +'px';
+this.x_arrow[1].style.top=(this.oy+1) + 'px';
+this.x_arrow[2].style.left=(this.bgWidth-3) +'px';
+this.x_arrow[2].style.top=(this.oy-2) + 'px';
+this.x_arrow[3].style.left=(this.bgWidth-3) +'px';
+this.x_arrow[3].style.top=(this.oy-1) + 'px';
+this.x_arrow[4].style.left=(this.bgWidth-3) +'px';
+this.x_arrow[4].style.top=(this.oy+1) + 'px';
+this.x_arrow[5].style.left=(this.bgWidth-3) +'px';
+this.x_arrow[5].style.top=(this.oy+2) + 'px';
+
+//y轴箭头
+this.y_arrow[0].style.left=(this.ox - 1) +'px';
+this.y_arrow[0].style.top='1px';
+this.y_arrow[1].style.left=(this.ox + 1) +'px';
+this.y_arrow[1].style.top='1px';
+this.y_arrow[2].style.left=(this.ox-2) +'px';
+this.y_arrow[2].style.top='2px';
+this.y_arrow[3].style.left=(this.ox-1) +'px';
+this.y_arrow[3].style.top='2px';
+this.y_arrow[4].style.left=(this.ox+1) +'px';
+this.y_arrow[4].style.top='2px';
+this.y_arrow[5].style.left=(this.ox+2) +'px';
+this.y_arrow[5].style.top='2px';
+
+//加入箭头
+for(i=0;i<6;i++){
+this.container.appendChild(this.x_arrow[i]);
+this.container.appendChild(this.y_arrow[i]);
+}
+
+var baseLineX = document.createElement('div'); 
+baseLineX.style.position = "absolute"; 
+baseLineX.style.left = 0; 
+baseLineX.style.top = this.oy; 
+baseLineX.style.fontSize = '1px'; 
+baseLineX.style.height = '1px'; 
+baseLineX.style.width = this.bgWidth +'px'; 
+baseLineX.style.overflow = 'hidden' 
+baseLineX.style.zIndex=100;
+baseLineX.style.backgroundColor = this.baseLineColor; 
+this.container.appendChild(baseLineX); 
+this.baseLineX = baseLineX; 
+var baseLineY = document.createElement('div'); 
+baseLineY.style.position = "absolute"; 
+baseLineY.style.left = this.ox; 
+baseLineY.style.top = 0; 
+baseLineY.style.fontSize = '1px'; 
+baseLineY.style.height = this.bgHeight + 'px'; 
+baseLineY.style.width = '1px'; 
+baseLineY.style.overflow = 'hidden' 
+baseLineY.style.zIndex=100;
+baseLineY.style.backgroundColor = this.baseLineColor; 
+this.baseLineY = baseLineY; 
+this.container.appendChild(baseLineY); 
+return true;
+};
+//移除坐标线
+this.cleanCoordinate=function(){
+  if(this.baseLineX && this.baseLineY)
+   {
+    this.container.removeChild(this.baseLineX);
+    this.container.removeChild(this.baseLineY);
+    this.baseLineX=null;
+    this.baseLineY=null;
+   }
+  for(var i=0;i<this.x_arrow.length;i++)
+    this.container.removeChild(this.x_arrow[i]);
+  for(var i=0;i<this.y_arrow.length;i++)
+    this.container.removeChild(this.y_arrow[i]);
+  this.x_arrow.length=0;
+  this.y_arrow.length=0;
+return true;
+};
+//重绘坐标线(原点坐标)[同时也必须连带重绘div方格]
+this.redrawCoordinate=function(dx,dy){
+  if((typeof dx)=='number' && Number(dx)>0 && Number(dx)<this.bgWidth){
+    this.ox=Math.ceil(Number(dx));
+  }else{alert('Please input the right position x');return;}
+  if((typeof dy)=='number' && Number(dy)>0 && Number(dy)<this.bgHeight){
+    this.oy=Math.ceil(Number(dy));
+  }else{alert('Please input the right position y');return;}
+  Gplot_coord[this.container.id]={x:this.ox,y:this.oy};
+  this.cleanCoordinate()
+  this.drawCoordinate();
+  this.cleanDiv();
+  this.drawDiv();
+return true;
+};
+//清理画布，移走所有对象 
+this.clean=function(){ 
+this.container.innerHTML =""; 
+//清除刻度线对象
+this.tickmark_x.length=0;
+this.tickmark_y.length=0;
+this.drawCoordinate(); 
+//this.drawDiv();
+this.setCoordShow();
+this.setTickmark();
+return true;
+};
+//画点，相对原点 [z-index:101]
+this.drawDot=function(x,y){
+x=Number(Number(x).toFixed(1));
+y=Number(Number(y).toFixed(1));
+var dot = document.createElement('div'); 
+dot.style.left = this.ox + (x-this.brushWeight/2) + 'px'; 
+dot.style.top = this.oy - (y+this.brushWeight/2) + 'px'; 
+dot.style.height = this.brushWeight; 
+dot.style.width = this.brushWeight; 
+dot.style.position = 'absolute'; 
+dot.style.fontSize = '1px'; 
+dot.style.backgroundColor = this.brushColor; 
+dot.style.overflow = "hidden"; 
+dot.style.zIndex=101;
+this.container.appendChild(dot); 
+dot = null; 
+return true;
+};
+
+
+//用于数学函数绘图中，连接（x0，y0）与（x1，y1）两个点的连线[第一个点不绘]
+this.fline=function(x0,y0,x1,y1){
+    //竖线 
+if((x1-x0)==0){ 
+for( var i=((y1>y0)?y0:y1); i<=((y1>y0)?y1:y0); i++ ){ 
+if(i!=y0)//起点不绘出
+this.drawDot(x1, i); 
+} 
+return true;
+} 
+//横线 
+if((y1-y0)==0){ 
+for( var i=((x1>x0)?x0:x1); i<=((x1>x0)?x1:x0); i++ ){ 
+if(i!=x0)//起点不绘出
+this.drawDot(i, y1); 
+} 
+return true;
+} 
+//斜线 
+//k=斜率，直线方程为y=kx + b 
+var k = (y1-y0)/(x1-x0); 
+if(k<=1 && k>=-1){ 
+for(var i=((x1>x0)?x0:x1); i<=((x1>x0)?x1:x0); i++){ 
+if(i!=x0)//起点不绘出
+this.drawDot(i, k*i+y1-k*x1 ); 
+} 
+} 
+else{ 
+for(var i=((y1>y0)?y0:y1); i<=((y1>y0)?y1:y0); i++){ 
+if(i!=y0)//起点不绘出
+this.drawDot((i-y1+k*x1)/k,i); 
+} 
+} 
+return true; 
+};
+
+
+
+//----------
+  //数学函数集
+//----------
+
+
+//------功能函数
+
+//1.调整start与end
+this.sort_range=function(start_x,end_x){
+if(start_x!=null && (typeof start_x)=='number'){}else{start_x=(0-this.ox*this.zoom);}
+if(end_x!=null && (typeof end_x)=='number'){}else{end_x=(this.bgWidth-this.ox)*this.zoom;}
+//根据坐标缩放比例调整成以px为单位步进为1的坐标
+var s_x=start_x/this.zoom;
+var e_x=end_x/this.zoom;
+s_x=(s_x>=(0-this.ox)?s_x:(0-this.ox).toFixed(1));
+e_x=(e_x<=(this.bgWidth-this.ox)?e_x:(this.bgWidth-this.ox).toFixed(1));
+var tmp_x;
+if(s_x>e_x){//保证start_x 小于 end_x
+tmp_x=s_x;
+s_x=e_x;
+e_x=tmp_x;
+}
+return {s:s_x,e:e_x};
+};
+
+//2.调整参数
+this.sort_para=function(para,toval){//toval:默认值
+ if(para!=null && (typeof para)=='number'){}else{
+ para=toval;
+ }
+ return para;
+};
+
+//---------
+  //三角函数
+//--------/
+//sin函数曲线，传入角度，比如90，180，360 
+this.sin=function(angle1,angle2){
+var tmpangle;
+if(angle1>angle2){//务必保证angle1小于angle2
+tmpangle=angle1;
+angle1=angle2;
+angle2=tmpangle;
+}
+for(var i=(angle1/180*Math.PI)/this.zoom; i<(angle2/180*Math.PI)/this.zoom; i++){ 
+this.drawDot(i,(Math.sin(i*this.zoom))/this.zoom); 
+} 
+return true;
+};
+//tan函数曲线 
+this.tan=function(angle1,angle2){ 
+var tmpangle;
+if(angle1>angle2){//务必保证angle1小于angle2
+tmpangle=angle1;
+angle1=angle2;
+angle2=tmpangle;
+}
+for(var i=(angle1/180*Math.PI)/this.zoom; i<(angle2/180*Math.PI)/this.zoom; i++){ 
+if((Math.tan(i*this.zoom))/this.zoom>this.oy){ 
+continue; 
+} 
+this.drawDot(i,(Math.tan(i*this.zoom))/this.zoom); 
+} 
+return true;
+};
+
+//cos函数曲线，传入角度，比如90，180，360 
+this.cos=function(angle1,angle2){ 
+var tmpangle;
+if(angle1>angle2){//务必保证angle1小于angle2
+tmpangle=angle1;
+angle1=angle2;
+angle2=tmpangle;
+}
+for(var i=(angle1/180*Math.PI)/this.zoom; i<(angle2/180*Math.PI)/this.zoom; i++){ 
+this.drawDot(i,(Math.cos(i*this.zoom))/this.zoom); 
+}
+true;
+};
+
+//画线从(x0,y0)到(x1,y1) 
+this.line=function(x0,y0,x1,y1){
+//考虑zoom
+x0=x0/this.zoom;
+y0=y0/this.zoom;
+x1=x1/this.zoom;
+y1=y1/this.zoom; 
+    //竖线 
+if((x1-x0)==0){ 
+for( var i=((y1>y0)?y0:y1); i<((y1>y0)?y1:y0); i++ ){ 
+this.drawDot(x1, i); 
+} 
+return; 
+} 
+//横线 
+if((y1-y0)==0){ 
+for( var i=((x1>x0)?x0:x1); i<((x1>x0)?x1:x0); i++ ){ 
+this.drawDot(i, y1); 
+} 
+return; 
+} 
+//斜线 
+//k=斜率，直线方程为y=kx + b 
+var k = (y1-y0)/(x1-x0); 
+if(k<=1 && k>=-1){ 
+for(var i=((x1>x0)?x0:x1); i<((x1>x0)?x1:x0); i++){ 
+this.drawDot(i, k*i+y1-k*x1 ); 
+} 
+} 
+else{ 
+for(var i=((y1>y0)?y0:y1); i<((y1>y0)?y1:y0); i++){ 
+this.drawDot((i-y1+k*x1)/k,i); 
+} 
+}
+return; 
+};
+//画圆，radius是半径，(xi,yi)为圆心 
+this.circle=function(radius,xi, yi){ 
+if((typeof xi)=='undefined'){ 
+xi = 0; 
+} 
+if((typeof yi)=='undefined'){ 
+yi = 0; 
+}
+xi=parseInt(xi/this.zoom);
+yi=parseInt(yi/this.zoom);
+radius=parseInt(radius/this.zoom);
+//随着半径的增大，划出来的圆周断断续续,下面的做法 
+//使画圆周的点数随着半径的增大而增大，使画出来的圆周更圆润. 
+var dot_num=(2*Math.PI*radius<180)?180:(2*Math.PI*radius);
+var step=360/dot_num;
+//i为角度，从0到360 
+var i=0; 
+var _x0=0;
+var _y0=0;
+while(i<360){ 
+_x0 = Math.sin(i/180*Math.PI)*radius; 
+_y0 = Math.cos(i/180*Math.PI)*radius; 
+this.drawDot(_x0+xi, _y0+yi); 
+i+=step;
+} 
+return true;
+};
+//画多边形，传入一个点列 
+this.polygon=function(dots){ 
+if(typeof dots=='undefined'){ 
+alert('you should specify some dots to draw!'); 
+return false; 
+} 
+if(dots.constructor!=Array){ 
+alert('you should specify some dots to draw!'); 
+return false; 
+} 
+for(var i=0; i<dots.length-1; i++){ 
+this.line(dots[i].x,dots[i].y, dots[i+1].x,dots[i+1].y); 
+if(i==1&&dots.length==2){ 
+break; 
+} 
+} 
+this.line(dots[0].x, dots[0].y, dots[dots.length-1].x, dots[dots.length-1].y); 
+return true;
+};
+
+//---------多项式函数
+
+//-------1.y=kx+b  【线性】
+this.kx_b=function(k,b,start_x,end_x){
+var rs=this.sort_range(start_x,end_x);
+var s_x=rs.s;
+var e_x=rs.e;
+var i=0;
+k=this.sort_para(k,1);
+b=this.sort_para(b,0);
+var x_0,y_0;
+x_0=s_x;
+y_0=(k*x_0*this.zoom + b)/this.zoom;
+this.drawDot(x_0,y_0);
+for(i=s_x;i<e_x;i++){
+  y1=k*(i*this.zoom)+b;
+  y2=k*(i+1)*this.zoom+b
+  //缩放：
+  y1=y1/this.zoom;
+  y2=y2/this.zoom;
+  if(y1> this.oy || y1<(this.oy-this.bgHeight) || y2> this.oy || y2<(this.oy-this.bgHeight))
+    continue;
+  this.fline(i,y1,i+1,y2);
+}
+return true;
+};
+
+//--------2.y=a*x^2+b*x+c  【二次】
+this.ax2=function(a,b,c,start_x,end_x){
+var rs=this.sort_range(start_x,end_x);
+var s_x=rs.s;
+var e_x=rs.e;
+var i=0;
+a=this.sort_para(a,1);
+b=this.sort_para(b,0);
+c=this.sort_para(c,0);
+var x_0,y_0;
+x_0=s_x;
+y_0=(a*Math.pow(s_x*this.zoom,2)+b*s_x*this.zoom+c)/this.zoom;
+this.drawDot(x_0,y_0);
+var y1,y2;
+for(i=s_x;i<e_x;i++){
+  y1=a*Math.pow((i*this.zoom),2)+b*(i*this.zoom)+c;
+  y2=a*Math.pow((i+1)*this.zoom,2)+b*((i+1)*this.zoom)+c
+  //缩放：
+  y1=y1/this.zoom;
+  y2=y2/this.zoom;
+  if(y1> this.oy || y1<(this.oy-this.bgHeight) || y2> this.oy || y2<(this.oy-this.bgHeight))
+    continue;
+  this.fline(i,y1,i+1,y2);
+}
+return true;
+};
+
+//--------3.y=a*x^3+b*x^2+c*x+d   【三次】
+this.ax3=function(a,b,c,d,start_x,end_x){
+var rs=this.sort_range(start_x,end_x);
+var s_x=rs.s;
+var e_x=rs.e;
+var i=0;
+a=this.sort_para(a,1);
+b=this.sort_para(b,0);
+c=this.sort_para(c,0);
+d=this.sort_para(d,0);
+var x_0,y_0;
+x_0=s_x;
+y_0=(a*Math.pow(s_x*this.zoom,3)+b*Math.pow(s_x*this.zoom,2)+c*s_x*this.zoom+d)/this.zoom;
+this.drawDot(x_0,y_0);
+var y1,y2;
+for(i=s_x;i<e_x;i++){
+  y1=(a*Math.pow(i*this.zoom,3)+b*Math.pow(i*this.zoom,2)+c*i*this.zoom+d);
+  y2=(a*Math.pow((i+1)*this.zoom,3)+b*Math.pow((i+1)*this.zoom,2)+c*(i+1)*this.zoom+d);
+  //缩放：
+  y1=y1/this.zoom;
+  y2=y2/this.zoom;
+  if(y1> this.oy || y1<(this.oy-this.bgHeight) || y2> this.oy || y2<(this.oy-this.bgHeight))
+    continue;
+  this.fline(i,y1,i+1,y2);
+}
+return true;
+};
+
+//--------4.y=a*x^n+b*x^(n-1)+c*x^(n-2)+...   【n次】
+this.axn=function(n,p_arr,start_x,end_x){//n:次数  p_arr:各个幂次前的系数【数组】
+if(n && (typeof n)=='number'){
+  if(n>0){
+    if(n==parseInt(n)){
+
+    }else{
+     alert('the parameter n must be an integer');
+     return false;
+    }
+  }else{
+    alert('the gived parameter must be larger than zero');
+    return false;
+  }
+}else{
+alert('You must give the parameter n');
+return false;
+}
+if(p_arr && (p_arr.constructor)==Array){
+  if(p_arr.length!=(n+1)){
+   alert('the length of the p_arr must be' + (n+1));
+   return false;
+  }
+}else{
+  alert('the parameter p_arr must be gived and be an array');
+  return false;
+}
+var i=0;
+p_arr[0]=this.sort_para(p_arr[0],1);//最高次系数默认为1
+for(i=1;i<=n;i++)
+  p_arr[i]=this.sort_para(p_arr[i],0);//其它次系数默认为0
+
+var rs=this.sort_range(start_x,end_x);
+var s_x=rs.s;
+var e_x=rs.e;
+var x_0,y_0;
+x_0=s_x;
+y_0=0;
+for(i=0;i<=n;i++)
+  y_0+=p_arr[i]*Math.pow(s_x*this.zoom,n-i);
+y_0=y_0/this.zoom;
+this.drawDot(x_0,y_0);
+
+var j=0;
+
+var y1=0,y2=0;
+for(i=s_x;i<e_x;i++){
+  y1=0;
+  y2=0;
+  for(j=0;j<=n;j++){
+  y1+=p_arr[j]*Math.pow(i*this.zoom,n-j);  
+  y2+=p_arr[j]*Math.pow((i+1)*this.zoom,n-j);
+  }
+  //缩放：
+  y1=y1/this.zoom;
+  y2=y2/this.zoom;
+  if(y1> this.oy || y1<(this.oy-this.bgHeight) || y2> this.oy || y2<(this.oy-this.bgHeight))
+    continue;
+  this.fline(i,y1,i+1,y2);
+}
+return true;
+};
+
+//---------指数函数
+
+//--------1.y=e^x  【以数学常数e为底】
+this.e_x=function(start_x,end_x){
+var rs=this.sort_range(start_x,end_x);
+var s_x=rs.s;
+var e_x=rs.e;
+
+var i=0;
+var x_0,y_0;
+x_0=s_x;
+y_0=Math.pow(Math.E,s_x*this.zoom)/this.zoom;
+this.drawDot(x_0,y_0);
+var y1,y2;
+for(i=s_x;i<e_x;i++){
+  y1=Math.pow(Math.E,i*this.zoom);
+  y2=Math.pow(Math.E,(i+1)*this.zoom);
+  //缩放：
+  y1=y1/this.zoom;
+  y2=y2/this.zoom;
+  if(y1> this.oy || y1<(this.oy-this.bgHeight) || y2> this.oy || y2<(this.oy-this.bgHeight))
+    continue;
+  this.fline(i,y1,i+1,y2);
+}
+return true;
+};
+
+//--------2.y=a^x  【以自定义常数a为底】
+
+this.a_x=function(a,start_x,end_x){
+a=this.sort_para(a,Math.E);//默认为e为底
+var rs=this.sort_range(start_x,end_x);
+var s_x=rs.s;
+var e_x=rs.e;
+
+var i=0;
+var x_0,y_0;
+x_0=s_x;
+y_0=Math.pow(a,s_x*this.zoom)/this.zoom;
+this.drawDot(x_0,y_0);
+var y1,y2;
+for(i=s_x;i<e_x;i++){
+  y1=Math.pow(a,i*this.zoom);
+  y2=Math.pow(a,(i+1)*this.zoom);
+  //缩放：
+  y1=y1/this.zoom;
+  y2=y2/this.zoom;
+  if(y1> this.oy || y1<(this.oy-this.bgHeight) || y2> this.oy || y2<(this.oy-this.bgHeight))
+    continue;
+  this.fline(i,y1,i+1,y2);
+}
+return true;
+};
+
+//---------对数函数
+
+//--------1.y=ln(x)  【以数学常数e为底】
+this.ln_x=function(start_x,end_x){
+var rs=this.sort_range(start_x,end_x);
+var s_x=rs.s;
+var e_x=rs.e;
+//范围不能小于0
+if(s_x<0 || e_x<0){
+ alert('the range of x must be larger than zero');
+ return false;
+}
+if(s_x==0)
+  s_x++;
+
+var i=0;
+var x_0,y_0;
+x_0=s_x;
+y_0=Math.log(s_x*this.zoom)/this.zoom;
+this.drawDot(x_0,y_0);
+var y1,y2;
+for(i=s_x;i<e_x;i++){
+  y1=Math.log(i*this.zoom);
+  y2=Math.log((i+1)*this.zoom);
+  //缩放：
+  y1=y1/this.zoom;
+  y2=y2/this.zoom;
+  if(y1> this.oy || y1<(this.oy-this.bgHeight) || y2> this.oy || y2<(this.oy-this.bgHeight))
+    continue;
+  this.fline(i,y1,i+1,y2);
+}
+return true;
+};
+
+//--------2.y=log_a(x)  【以自定义常数a为底】
+this.log_ax=function(a,start_x,end_x){
+a=this.sort_para(a,Math.E);
+if(a<=0){
+ alert('the parameter a must be larger than zero');
+ return false;
+}
+
+var rs=this.sort_range(start_x,end_x);
+var s_x=rs.s;
+var e_x=rs.e;
+//范围不能小于0
+if(s_x<0 || e_x<0){
+ alert('the range of x must be larger than zero');
+ return false;
+}
+
+if(s_x==0)
+  s_x++;
+
+var i=0;
+var x_0,y_0;
+x_0=s_x;
+y_0=(Math.log(s_x*this.zoom)/Math.log(a))/this.zoom;
+this.drawDot(x_0,y_0);
+var y1,y2;
+for(i=s_x;i<e_x;i++){
+  y1=Math.log(i*this.zoom)/Math.log(a);
+  y2=Math.log((i+1)*this.zoom)/Math.log(a);
+  //缩放：
+  y1=y1/this.zoom;
+  y2=y2/this.zoom;
+  if(y1> this.oy || y1<(this.oy-this.bgHeight) || y2> this.oy || y2<(this.oy-this.bgHeight))
+    continue;
+  this.fline(i,y1,i+1,y2);
+}
+return true;
+};
+
+//---------用户自定义函数
+this.spcFunc=function(func,start_x,end_x){
+var rs=this.sort_range(start_x,end_x);
+var s_x=rs.s;
+var e_x=rs.e;
+
+//检查函数
+if(func && func.constructor==Function){
+ if(func.length<=0){
+   alert('the function ' + func.toString() + 'must have at least 1 parameter');
+   return false;
+ }
+}else{
+alert('the parameter func must be a function');
+return false;
+}
+
+var i=0;
+var x_0,y_0;
+x_0=s_x;
+y_0=func(x_0*this.zoom)/this.zoom;
+this.drawDot(x_0,y_0);
+var y1,y2;
+for(i=s_x;i<e_x;i++){
+  y1=func(i*this.zoom);
+  y2=func((i+1)*this.zoom);
+  //缩放：
+  y1=y1/this.zoom;
+  y2=y2/this.zoom;
+  if(y1> this.oy || y1<(this.oy-this.bgHeight) || y2> this.oy || y2<(this.oy-this.bgHeight))
+    continue;
+  this.fline(i,y1,i+1,y2);
+}
+return true;
+};
+//----------
+  //创建类后的初始化函数
+//----------
+this.init=function(){
+this.drawCoordinate();
+this.setCoordShow();
+this.container.onmousemove=function(e){//显示坐标
+  e=e || window.event;
+  var x=0,y=0;
+  var zoom=Gplot_zoom[this.id];
+  x=(((e.clientX-(this.offsetLeft-mbplot_body.scrollLeft))-Gplot_coord[this.id].x)*zoom).toFixed(1);
+  y=((Gplot_coord[this.id].y-(e.clientY-this.offsetTop+mbplot_body.scrollTop))*zoom).toFixed(1);
+  Gplot_showcoord[this.id].innerHTML='x:' + x + '<br/>' + 'y:' + y;
+}; 
+this.drawDiv();
+};
+
+//执行初始化
+this.init();
+
+//成功创建
+return true;
+
+}
+//----------------
+  //----End of Class of MB_Plot
+//----------------
