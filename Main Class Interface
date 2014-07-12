@@ -1,4 +1,5 @@
 
+<meta http-equiv="content-type" content="text/javascript;charset=utf-8" />
 //辅助函数 
 function $(id){return document.getElementById(id)}; 
 var mbplot_body;//全局对象【body引用】
