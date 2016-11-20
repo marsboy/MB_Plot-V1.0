@@ -1,4 +1,4 @@
-//辅助函数 
+//工具类辅助函数 
 function $(id){return document.getElementById(id)}; 
 var mbplot_body;//全局对象【body引用】
 if(window.addEventListener){
@@ -6,7 +6,7 @@ if(window.addEventListener){
  }
 else{
   window.attachEvent('onload',function(){mbplot_body=(document.compatMode=="BackCompat"?document.body:document.documentElement);});
-  }
+}
 
 //各类内部对象在事件程序中的引用
 var Gplot_coord=new Array();
